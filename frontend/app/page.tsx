@@ -1,6 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
-import { BellRing, Building2, Maximize2, Play, Cctv, CloudRain, Droplets, ExternalLink, FlaskConical, LocateFixed, MapPinned, Megaphone, Phone, RefreshCw, Share2, ShieldAlert, TriangleAlert, Waves, WifiOff, type LucideIcon } from "lucide-react";
+import { BellRing, Code2, Building2, Maximize2, Play, Cctv, CloudRain, Droplets, ExternalLink, FlaskConical, LocateFixed, MapPinned, Megaphone, Phone, RefreshCw, Share2, ShieldAlert, TriangleAlert, Waves, WifiOff, X, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { distanceKm, fmtAge, fmtHM, fmtTime, num, RISK_META, RISK_ORDER } from "@/lib/format";
@@ -13,15 +13,17 @@ import InstallCard from "@/components/InstallCard";
 import StationSheet from "@/components/StationSheet";
 import { playAlert, soundEnabled, unlockAudio } from "@/lib/sound";
 
+import DeveloperPanel from "@/components/DeveloperPanel";
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false, loading: () => <div className="h-96 animate-pulse rounded-2xl bg-slate-200" /> });
 
-type Tab = "status" | "map" | "rain" | "cctv" | "notify";
+type Tab = "status" | "map" | "rain" | "cctv" | "notify" | "dev";
 const TABS: { id: Tab; icon: LucideIcon; label: string }[] = [
   { id: "status", icon: Waves, label: "สถานการณ์" },
   { id: "map", icon: MapPinned, label: "แผนที่" },
   { id: "rain", icon: CloudRain, label: "ฝน" },
   { id: "cctv", icon: Cctv, label: "CCTV" },
   { id: "notify", icon: BellRing, label: "แจ้งเตือน" },
+  { id: "dev", icon: Code2, label: "ผู้พัฒนา" },
 ];
 
 const SHARE_TEXT = `เทศบาลนครยะลา ให้ประชาชนติดตามสถานการณ์น้ำยะลาได้ตลอด 24 ชั่วโมง ตรวจสอบปริมาณน้ำ ปริมาณน้ำฝน และระดับน้ำผ่านกล้อง CCTV
@@ -171,8 +173,26 @@ export default function Home() {
 
   return (
     <div className="mx-auto min-h-dvh max-w-2xl pb-24">
-      <header className="pt-safe sticky top-0 z-30 bg-gradient-to-r from-sky-800 to-sky-600 px-4 pb-3 pt-3 text-white shadow">
-        <div className="flex items-center justify-between">
+      <header className="pt-safe sticky top-0 z-30 overflow-hidden rounded-b-[28px] bg-gradient-to-br from-sky-900 via-sky-700 to-cyan-500 px-4 pb-4 pt-3 text-white shadow-lg shadow-sky-900/25">
+        {/* ลายน้ำกระเซ็น (splash) ตกแต่งส่วนหัว */}
+        <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 400 100" preserveAspectRatio="xMaxYMin slice" fill="none">
+          <g transform="translate(-60 0)">
+          <g stroke="white" strokeOpacity="0.22" strokeWidth="1.5">
+            <ellipse cx="338" cy="30" rx="26" ry="9" />
+            <ellipse cx="338" cy="30" rx="48" ry="17" strokeOpacity="0.15" />
+            <ellipse cx="338" cy="30" rx="72" ry="26" strokeOpacity="0.09" />
+          </g>
+          <g fill="white" fillOpacity="0.2">
+            <path d="M338 2c5 8 9 13 9 18a9 9 0 1 1-18 0c0-5 4-10 9-18z" />
+            <circle cx="300" cy="14" r="3.5" />
+            <circle cx="372" cy="12" r="2.5" />
+            <circle cx="358" cy="54" r="3" fillOpacity="0.14" />
+            <circle cx="312" cy="58" r="2" fillOpacity="0.14" />
+          </g>
+          </g>
+          <path d="M0 92c40-10 80 8 120 0s80-10 120 0 80 8 120 0 30-4 40-2v10H0z" fill="white" fillOpacity="0.1" />
+        </svg>
+        <div className="relative flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/20 ring-1 ring-white/30"><Droplets size={24} strokeWidth={2.2} /></span>
             <div>
@@ -185,7 +205,7 @@ export default function Home() {
             <button onClick={refresh} aria-label="รีเฟรช" className="grid h-9 w-9 place-items-center rounded-full bg-white/20"><RefreshCw size={18} /></button>
           </div>
         </div>
-        <p className="mt-1 text-xs opacity-90">
+        <p className="relative mt-1 text-xs opacity-90">
           ข้อมูลอัปเดตล่าสุด: {fmtHM(fetchedAt)} {health[0]?.last_success_at && `· ดึงจากต้นทางเมื่อ ${fmtAge(health[0].age_minutes)}`}
         </p>
       </header>
@@ -327,6 +347,7 @@ export default function Home() {
           </div>
         )}
 
+        {tab === "dev" && <DeveloperPanel />}
         {tab === "notify" && <NotifyPanel water={water} prefs={prefs} setPrefs={(p) => { setPrefs(p); }} />}
 
         <footer className="space-y-2 px-1 pb-4 pt-2 text-xs leading-relaxed text-slate-500">
@@ -342,9 +363,9 @@ export default function Home() {
       </main>
 
       <nav className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto grid max-w-2xl grid-cols-5">
+        <div className="mx-auto grid max-w-2xl grid-cols-6">
           {TABS.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} className={`flex flex-col items-center py-2 text-xs ${tab === t.id ? "font-bold text-sky-700" : "text-slate-500"}`}>
+            <button key={t.id} onClick={() => setTab(t.id)} className={`flex flex-col items-center py-2 text-[11px] ${tab === t.id ? "font-bold text-sky-700" : "text-slate-500"}`}>
               <t.icon size={22} strokeWidth={tab === t.id ? 2.5 : 2} />
               <span className="mt-0.5">{t.label}</span>
             </button>
@@ -379,6 +400,12 @@ function Banner({ tone, icon: Icon, children }: { tone: "red" | "amber" | "purpl
 function CctvCard({ cam }: { cam: CctvInfo["cameras"][number] }) {
   const [open, setOpen] = useState(false);
   const frame = useRef<HTMLIFrameElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden"; // กันหน้าเว็บเลื่อนซ้อนตอนดูกล้องเต็มจอ
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
   return (
     <section className="overflow-hidden rounded-2xl bg-white shadow-sm">
       <div className="flex items-center gap-3 p-4">
@@ -396,23 +423,24 @@ function CctvCard({ cam }: { cam: CctvInfo["cameras"][number] }) {
         </div>
       )}
       {cam.embed && open && (
-        <div>
+        // เต็มหน้าจอ: ระบบกล้องของเทศบาลออกแบบมาให้ใช้เต็มจอ (มีรายการกล้องอยู่ด้านล่าง) ถ้าเป็นกรอบเล็กจะมองไม่เห็นตัวเลือก
+        <div className="fixed inset-0 z-[1100] flex h-dvh flex-col bg-slate-900">
+          <div className="pt-safe flex items-center gap-2 bg-slate-900 px-3 pb-2 pt-2 text-white">
+            <Cctv size={18} className="shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-sm font-bold">{cam.name}</span>
+            <button onClick={() => frame.current?.requestFullscreen?.().catch(() => {})} aria-label="เต็มจอ" className="grid h-9 w-9 place-items-center rounded-lg bg-white/15"><Maximize2 size={17} /></button>
+            <a href={cam.url} target="_blank" rel="noopener noreferrer" aria-label="เปิดในแท็บใหม่" title="ถ้าภาพไม่ขึ้น ให้เปิดในแท็บใหม่" className="grid h-9 w-9 place-items-center rounded-lg bg-white/15"><ExternalLink size={17} /></a>
+            <button onClick={() => setOpen(false)} className="flex h-9 items-center gap-1 rounded-lg bg-white px-3 text-sm font-bold text-slate-900"><X size={16} /> ปิด</button>
+          </div>
           <iframe
             ref={frame}
             src={cam.url}
             title={cam.name}
-            className="h-[68dvh] min-h-[420px] w-full border-0 bg-slate-900"
+            className="min-h-0 w-full flex-1 border-0 bg-slate-900"
             allow="fullscreen; autoplay; picture-in-picture"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
             referrerPolicy="strict-origin-when-cross-origin"
-            loading="lazy"
           />
-          <div className="flex gap-2 p-3">
-            <button onClick={() => frame.current?.requestFullscreen?.().catch(() => {})} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-100 py-2.5 text-sm font-semibold"><Maximize2 size={16} /> เต็มจอ</button>
-            <a href={cam.url} target="_blank" rel="noopener noreferrer" className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-100 py-2.5 text-sm font-semibold"><ExternalLink size={16} /> เปิดในแท็บใหม่</a>
-            <button onClick={() => setOpen(false)} className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold">ปิด</button>
-          </div>
-          <p className="px-4 pb-3 text-xs text-slate-500">ถ้าภาพไม่ขึ้น ให้กด “เปิดในแท็บใหม่” · ภาพ CCTV ใช้ดูประกอบเท่านั้น ไม่แทนค่าระดับน้ำที่ตรวจวัด</p>
         </div>
       )}
       {!cam.embed && (
