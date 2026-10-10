@@ -3,7 +3,7 @@ import dynamic from "next/dynamic";
 import { BellRing, Code2, Building2, Maximize2, Play, Cctv, CloudRain, Droplets, ExternalLink, FlaskConical, LocateFixed, MapPinned, Megaphone, Phone, RefreshCw, Share2, ShieldAlert, TriangleAlert, Waves, WifiOff, X, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { distanceKm, fmtAge, fmtHM, fmtTime, num, RISK_META, RISK_ORDER } from "@/lib/format";
+import { fmtAge, fmtHM, fmtTime, num, RISK_META, RISK_ORDER } from "@/lib/format";
 import { currentSubscription, loadPrefs, type Prefs, registerSW, updatePrefs } from "@/lib/push";
 import type { Announcement, CctvInfo, RainStation, SourceHealth, WaterStation } from "@/lib/types";
 import { RiskBadge, Trend } from "@/components/Badges";
@@ -13,6 +13,7 @@ import InstallCard from "@/components/InstallCard";
 import StationSheet from "@/components/StationSheet";
 import { playAlert, soundEnabled, unlockAudio } from "@/lib/sound";
 
+import MyArea from "@/components/MyArea";
 import DeveloperPanel from "@/components/DeveloperPanel";
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false, loading: () => <div className="h-96 animate-pulse rounded-2xl bg-slate-200" /> });
 
@@ -119,14 +120,6 @@ export default function Home() {
     water.forEach((s) => (c[s.risk] = (c[s.risk] || 0) + 1));
     return c;
   }, [water]);
-  const nearest = useMemo(() => {
-    if (!me) return null;
-    return water
-      .filter((s) => s.lat != null && s.lon != null)
-      .map((s) => ({ s, d: distanceKm(me, [s.lat!, s.lon!]) }))
-      .sort((a, b) => a.d - b.d)
-      .slice(0, 3);
-  }, [me, water]);
   const sel = water.find((s) => s.id === selected) ?? null;
   const heavyRain = rain.filter((r) => r.rain_level === "heavy" || r.rain_level === "very_heavy");
   const unhealthy = health.length === 0 ? loaded && !netErr : health.some((h) => !h.ok);
@@ -253,28 +246,7 @@ export default function Home() {
               </button>
             )}
 
-            <section className="rounded-2xl bg-white p-3 shadow-sm">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-1.5 font-bold"><LocateFixed size={18} className="text-sky-700" /> ติดตามสถานการณ์น้ำใกล้บ้านฉัน</div>
-                  <div className="text-xs text-slate-500">ใช้ตำแหน่งในเครื่องเพื่อหาสถานีที่ใกล้ที่สุด (ไม่ส่งตำแหน่งไปเก็บที่เซิร์ฟเวอร์)</div>
-                </div>
-                <button onClick={locate} className="shrink-0 rounded-xl bg-sky-700 px-4 py-2 text-sm font-semibold text-white">ค้นหา</button>
-              </div>
-              {geoMsg && <p className="mt-2 text-sm text-slate-600">{geoMsg}</p>}
-              {nearest && (
-                <ul className="mt-2 space-y-1.5">
-                  {nearest.map(({ s, d }) => (
-                    <li key={s.id}>
-                      <button onClick={() => setSelected(s.id)} className="flex w-full items-center justify-between rounded-xl bg-slate-50 p-2.5 text-left">
-                        <span className="text-sm"><b>{s.name}</b><br /><span className="text-xs text-slate-500">ห่าง {d.toFixed(1)} กม.</span></span>
-                        <RiskBadge risk={s.risk} size="sm" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            <MyArea water={water} rain={rain} onSelect={setSelected} />
 
             {!loaded && [0, 1, 2].map((i) => <div key={i} className="h-24 animate-pulse rounded-2xl bg-slate-200" />)}
             {loaded && water.length === 0 && !netErr && <p className="rounded-2xl bg-white p-4 text-sm text-slate-600">ยังไม่มีข้อมูลสถานี — ระบบกำลังรอข้อมูลรอบแรกจากแหล่งต้นทาง</p>}
@@ -315,6 +287,7 @@ export default function Home() {
         {tab === "map" && (
           <>
             <MapView water={water} rain={rain} me={me} onSelect={setSelected} />
+            {geoMsg && <p className="px-1 text-sm text-slate-600">{geoMsg}</p>}
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {(["normal", "watch", "high", "critical", "stale", "unknown"] as const).map((r) => (
                 <span key={r} className="inline-flex items-center gap-1"><span className={`h-3 w-3 rounded-full ${RISK_META[r].dot}`} />{RISK_META[r].label}</span>

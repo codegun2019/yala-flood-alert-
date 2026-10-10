@@ -39,6 +39,7 @@ export interface RainStation {
   lat: number | null;
   lon: number | null;
   amphoe: string | null;
+  tumbon?: string | null;
   agency: string | null;
   simulated: boolean;
   rain_1h: number | null;
