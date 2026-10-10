@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+html { -webkit-text-size-adjust: 100%; }
+body { background: #f1f5f9; color: #0f172a; font-family: system-ui, -apple-system, "Noto Sans Thai", "Sarabun", sans-serif; }
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0.5rem); }
+.pt-safe { padding-top: env(safe-area-inset-top); }
+.leaflet-container { font-family: inherit; }
