@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { CloudRain } from "lucide-react";
+import { CloudRain, Pause, Play, Radar } from "lucide-react";
 import L from "leaflet";
 import { RISK_META, num } from "@/lib/format";
 import type { RainStation, WaterStation } from "@/lib/types";
@@ -13,6 +13,10 @@ const YALA: [number, number] = [6.54, 101.28];
 const RAIN_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/></svg>';
 
+interface Frame { time: number; path: string }
+const RADAR_API = "https://api.rainviewer.com/public/weather-maps.json";
+const hm = new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false });
+
 export default function MapView({
   water, rain, me, onSelect,
 }: { water: WaterStation[]; rain: RainStation[]; me: [number, number] | null; onSelect: (id: string) => void }) {
@@ -20,6 +24,50 @@ export default function MapView({
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
   const [showRain, setShowRain] = useState(true);
+
+  // ---- เรดาร์ฝน (RainViewer) — ปิดไว้เป็นค่าเริ่มต้น; เปิดแล้วเบราว์เซอร์จะเรียกบริการภายนอกโดยตรง
+  const [showRadar, setShowRadar] = useState(false);
+  const [frames, setFrames] = useState<Frame[]>([]);
+  const [host, setHost] = useState("");
+  const [idx, setIdx] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [radarErr, setRadarErr] = useState(false);
+  const radar = useRef<L.TileLayer | null>(null);
+
+  useEffect(() => {
+    if (!showRadar) return;
+    let dead = false;
+    const load = () =>
+      fetch(RADAR_API).then((r) => r.json()).then((d) => {
+        if (dead) return;
+        const past: Frame[] = (d.radar?.past ?? []).slice(-8);
+        if (!past.length) throw new Error("no frames");
+        setHost(d.host); setFrames(past); setIdx(past.length - 1); setRadarErr(false);
+      }).catch(() => !dead && setRadarErr(true));
+    load();
+    const t = setInterval(load, 5 * 60_000);
+    return () => { dead = true; clearInterval(t); };
+  }, [showRadar]);
+
+  useEffect(() => {
+    if (!showRadar || !playing || frames.length < 2) return;
+    const t = setInterval(() => setIdx((i) => (i + 1) % frames.length), 800);
+    return () => clearInterval(t);
+  }, [showRadar, playing, frames.length]);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (!showRadar || !frames.length) {
+      if (radar.current) { m.removeLayer(radar.current); radar.current = null; }
+      return;
+    }
+    const url = `${host}${frames[idx].path}/256/{z}/{x}/{y}/6/1_1.png`;
+    if (!radar.current) {
+      // ภาพเรดาร์ฟรีมีความละเอียดสูงสุดที่ซูม 7 — ซูมมากกว่านั้นจะขยายภาพ
+      radar.current = L.tileLayer(url, { opacity: 0.6, maxNativeZoom: 7, maxZoom: 18, zIndex: 300, attribution: '<a href="https://www.rainviewer.com">RainViewer</a>' }).addTo(m);
+    } else radar.current.setUrl(url);
+  }, [showRadar, frames, host, idx]);
 
   useEffect(() => {
     if (!el.current || map.current) return;
@@ -86,6 +134,34 @@ export default function MapView({
       >
         <CloudRain size={16} /> ฝน
       </button>
+      <button
+        onClick={() => setShowRadar((v) => !v)}
+        className={`absolute right-3 top-14 z-[500] inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold shadow ${showRadar ? "bg-sky-700 text-white" : "bg-white text-slate-700"}`}
+      >
+        <Radar size={16} /> เรดาร์
+      </button>
+      {showRadar && (
+        <div className="absolute inset-x-3 bottom-3 z-[500] rounded-xl bg-white/95 p-2 text-xs shadow">
+          {radarErr ? (
+            <span className="text-red-700">โหลดภาพเรดาร์ไม่สำเร็จ ลองใหม่ภายหลัง</span>
+          ) : frames.length === 0 ? (
+            <span className="text-slate-600">กำลังโหลดภาพเรดาร์…</span>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setPlaying((v) => !v)} aria-label={playing ? "หยุด" : "เล่น"} className="grid h-8 w-8 place-items-center rounded-full bg-sky-700 text-white">
+                  {playing ? <Pause size={14} /> : <Play size={14} />}
+                </button>
+                <input type="range" min={0} max={frames.length - 1} value={idx} onChange={(e) => { setPlaying(false); setIdx(Number(e.target.value)); }} className="min-w-0 flex-1" />
+                <b className="shrink-0 tabular-nums">{hm.format(new Date(frames[idx].time * 1000))} น.</b>
+              </div>
+              <div className="mt-1 text-[11px] leading-snug text-slate-500">
+                ภาพเรดาร์ย้อนหลังประมาณ {Math.round((frames[frames.length - 1].time - frames[0].time) / 60)} นาที จาก RainViewer (รวมหลายแหล่ง ความละเอียดต่ำ ไม่ใช่เรดาร์ทางการ) · สีเข้มขึ้น = ฝนแรงขึ้น
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
