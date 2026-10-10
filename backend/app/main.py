@@ -6,6 +6,7 @@ import hmac
 import json
 import logging
 import secrets
+import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Literal
@@ -32,6 +33,8 @@ def admin_token() -> str:
     tok = os.getenv("ADMIN_TOKEN")
     if tok:
         return tok
+    if config.SERVERLESS:  # a per-instance random token would be unusable
+        raise HTTPException(503, "ADMIN_TOKEN is not configured")
     f = config.ADMIN_TOKEN_FILE
     if not f.exists():
         f.write_text(secrets.token_urlsafe(32))
@@ -39,14 +42,35 @@ def admin_token() -> str:
     return f.read_text().strip()
 
 
+_boot_lock = threading.Lock()
+_booted = False
+
+
+def boot() -> None:
+    """Idempotent start-up (tables + VAPID). Also called lazily on the first request because
+    serverless hosts may not run the ASGI lifespan."""
+    global VAPID_PUBLIC, _booted
+    if _booted:
+        return
+    with _boot_lock:
+        if _booted:
+            return
+        init_db()
+        try:
+            VAPID_PUBLIC = push.ensure_vapid()
+        except Exception:  # keep the public dashboard working even if push is misconfigured
+            log.exception("VAPID not available; push disabled")
+        _booted = True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global VAPID_PUBLIC
-    init_db()
-    VAPID_PUBLIC = push.ensure_vapid()
-    admin_token()
-    log.info("admin token stored at %s (or ADMIN_TOKEN env)", config.ADMIN_TOKEN_FILE)
-    task = asyncio.create_task(collector.loop(get_engine())) if not _disabled_collector() else None
+    boot()
+    if not config.SERVERLESS:
+        admin_token()
+        log.info("admin token stored at %s (or ADMIN_TOKEN env)", config.ADMIN_TOKEN_FILE)
+    # No background loop on serverless: /api/cron/collect is called by an external scheduler instead.
+    task = asyncio.create_task(collector.loop(get_engine())) if not (_disabled_collector() or config.SERVERLESS) else None
     yield
     if task:
         task.cancel()
@@ -59,6 +83,13 @@ def _disabled_collector() -> bool:
 
 app = FastAPI(title="YALA FLOOD ALERT API", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=config.FRONTEND_ORIGINS, allow_methods=["*"], allow_headers=["*"])
+
+
+@app.middleware("http")
+async def _ensure_boot(request, call_next):
+    if not _booted:
+        await asyncio.to_thread(boot)
+    return await call_next(request)
 
 
 def require_admin(x_admin_token: str | None = Header(default=None)):
@@ -427,6 +458,19 @@ def admin_deactivate_announcement(ann_id: int):
     with get_engine().begin() as conn:
         conn.execute(update(announcements).where(announcements.c.id == ann_id).values(active=False))
     return {"ok": True}
+
+
+@app.api_route("/api/cron/collect", methods=["GET", "POST"])
+async def cron_collect(authorization: str | None = Header(default=None), x_cron_secret: str | None = Header(default=None)):
+    """Called every ~5 min by an external scheduler (serverless has no background loop)."""
+    if not config.CRON_SECRET:
+        raise HTTPException(503, "CRON_SECRET is not configured")
+    given = x_cron_secret or (authorization[7:] if authorization and authorization.startswith("Bearer ") else "")
+    if not given or not hmac.compare_digest(given, config.CRON_SECRET):
+        raise HTTPException(401, "unauthorized")
+    summary = await asyncio.to_thread(collector.run_once, get_engine())
+    return {"ok": True, "sources": {k: v.get("error") for k, v in summary["sources"].items()},
+            "alerts": len(summary["alerts"])}
 
 
 @app.post("/api/admin/collect", dependencies=[Depends(require_admin)])

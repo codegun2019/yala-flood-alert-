@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -29,6 +30,12 @@ def _vapid_paths():
 def ensure_vapid() -> str:
     """Create keys on first run; returns the public key in the format browsers expect."""
     priv, pub = _vapid_paths()
+    env_pem = os.getenv("VAPID_PRIVATE_KEY_PEM")
+    if env_pem:  # persistent key supplied by the host (required on serverless, or subscriptions break)
+        priv.write_text(env_pem.replace("\\n", "\n"))
+        priv.chmod(0o600)
+    elif config.SERVERLESS:
+        raise RuntimeError("VAPID_PRIVATE_KEY_PEM must be set on serverless hosts")
     if not priv.exists():
         v = Vapid01()
         v.generate_keys()

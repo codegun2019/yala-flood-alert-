@@ -5,12 +5,23 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DATA_DIR = Path(os.getenv("YALA_DATA_DIR", BASE_DIR / "data"))
+# Vercel (serverless): code dir is read-only, only /tmp is writable and it is NOT persistent.
+# There, state must live in an external DB (DATABASE_URL) and secrets in env vars.
+SERVERLESS = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+DATA_DIR = Path(os.getenv("YALA_DATA_DIR", "/tmp/yala" if SERVERLESS else BASE_DIR / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # sqlite for local dev; for Supabase use e.g.
 #   postgresql+psycopg://postgres:<pw>@db.<ref>.supabase.co:5432/postgres
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'yala.db'}")
+# Hosts hand out "postgres://" / "postgresql://"; SQLAlchemy needs the psycopg (v3) driver name.
+for _old in ("postgres://", "postgresql://"):
+    if DATABASE_URL.startswith(_old):
+        DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len(_old):]
+        break
+
+# Serverless has no background loop: an external scheduler calls /api/cron/collect with this secret.
+CRON_SECRET = os.getenv("CRON_SECRET", "")
 
 # Data source adapters to run: yala_city, thaiwater, mock (comma separated)
 DATA_SOURCES = [s.strip() for s in os.getenv("DATA_SOURCES", "yala_city,thaiwater").split(",") if s.strip()]

@@ -170,6 +170,9 @@ def get_engine():
         kwargs = {}
         if config.DATABASE_URL.startswith("sqlite"):
             kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
+        elif config.SERVERLESS:
+            from sqlalchemy.pool import NullPool  # no long-lived connections in short-lived functions
+            kwargs["poolclass"] = NullPool
         else:
             kwargs["pool_pre_ping"] = True
         _engine = create_engine(config.DATABASE_URL, **kwargs)
