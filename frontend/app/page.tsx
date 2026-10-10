@@ -166,7 +166,7 @@ export default function Home() {
 
   return (
     <div className="mx-auto min-h-dvh max-w-2xl pb-24">
-      <header className="pt-safe sticky top-0 z-30 overflow-hidden rounded-b-[28px] bg-gradient-to-br from-sky-900 via-sky-700 to-cyan-500 px-4 pb-4 pt-3 text-white shadow-lg shadow-sky-900/25">
+      <header className="sticky top-0 z-30 overflow-hidden rounded-b-[28px] bg-gradient-to-br from-sky-900 via-sky-700 to-cyan-500 px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] text-white shadow-lg shadow-sky-900/25">
         {/* ลายน้ำกระเซ็น (splash) ตกแต่งส่วนหัว */}
         <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 400 100" preserveAspectRatio="xMaxYMin slice" fill="none">
           <g transform="translate(-60 0)">
