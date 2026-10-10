@@ -187,3 +187,22 @@ def test_center_status_roundtrip(tmp_path, monkeypatch):
     assert c.put("/api/admin/center-status", json={**body, "phone": "<script>"}, headers={"X-Admin-Token": "t"}).status_code == 422
     assert c.delete("/api/admin/center-status", headers={"X-Admin-Token": "t"}).status_code == 200
     assert c.get("/api/center-status").json() == {"status": None}
+
+
+def test_rain_forecast_parse_and_summary():
+    from datetime import datetime, timezone
+    from app import forecast
+    times = [f"2026-10-10T{h:02d}:00" for h in range(24)] + [f"2026-10-11T{h:02d}:00" for h in range(24)]
+    mm = [0.0] * 48
+    mm[20], mm[21], mm[22] = 12.0, 31.5, 4.0
+    payload = {"hourly": {"time": times, "precipitation": mm, "precipitation_probability": [80] * 48}}
+    now = datetime(2026, 10, 10, 12, 40, tzinfo=timezone.utc)   # 19:40 Bangkok -> starts at 19:00
+    hours = forecast.parse(payload, now)
+    assert len(hours) == 24 and hours[0]["t"].startswith("2026-10-10T19:00")
+    s = forecast.summarize(hours)
+    assert s["total_mm"] == 47.5 and s["level"] == "heavy" and s["peak_mm"] == 31.5 and s["peak_at"].startswith("2026-10-10T21")
+    assert forecast.summarize([{"t": "x", "mm": 0.0, "prob": 5}])["level"] == "none"
+    assert forecast.snap(None, None) == forecast.CENTER and forecast.snap(6.549, 101.251) == (6.5, 101.3)
+    import pytest
+    with pytest.raises(ValueError):
+        forecast.snap(13.7, 100.5)   # Bangkok: outside Yala

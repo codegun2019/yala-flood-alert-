@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, desc, func, insert, select, update
 
-from . import collector, config, push, risk, status
+from . import collector, config, forecast, push, risk, status
 from .db import (
     alerts, announcements, data_source_health, get_engine, init_db, notification_logs, notification_preferences,
     push_subscriptions, rainfall_readings, settings, station_thresholds, stations, upsert, utcnow, water_readings,
@@ -233,6 +233,18 @@ def center_status():
     if not row:
         return {"status": None}
     return {"status": {**json.loads(row.value), "updated_at": row.updated_at.isoformat()}}
+
+
+@app.get("/api/forecast/rain")
+def rain_forecast(lat: float | None = Query(default=None), lon: float | None = Query(default=None)):
+    """Next-24h rain forecast (model data, not an official forecast)."""
+    try:
+        data = forecast.get_rain_forecast(lat, lon)
+    except ValueError:
+        raise HTTPException(400, "coordinates outside Yala area")
+    if data is None:
+        raise HTTPException(503, "forecast unavailable")
+    return data
 
 
 @app.get("/api/cctv")

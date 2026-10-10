@@ -91,3 +91,12 @@ export interface CenterStatus {
   phone?: string | null;
   updated_at: string;
 }
+
+export interface RainForecast {
+  source: string;
+  official: boolean;
+  generated_at: string;
+  stale: boolean;
+  hours: { t: string; mm: number; prob: number | null }[];
+  summary: { total_mm: number; max_prob: number; level: "none" | "light" | "moderate" | "heavy" | "very_heavy"; label: string; peak_at: string | null; peak_mm: number };
+}

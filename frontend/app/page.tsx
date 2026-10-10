@@ -13,6 +13,7 @@ import InstallCard from "@/components/InstallCard";
 import StationSheet from "@/components/StationSheet";
 import { playAlert, soundEnabled, unlockAudio } from "@/lib/sound";
 
+import ForecastCard from "@/components/ForecastCard";
 import CenterNotice from "@/components/CenterNotice";
 import MyArea from "@/components/MyArea";
 import DeveloperPanel from "@/components/DeveloperPanel";
@@ -262,6 +263,7 @@ export default function Home() {
 
             <CenterNotice status={center} />
             <MyArea water={water} rain={rain} onSelect={setSelected} />
+            <ForecastCard />
 
             {!loaded && [0, 1, 2].map((i) => <div key={i} className="h-24 animate-pulse rounded-2xl bg-slate-200" />)}
             {loaded && water.length === 0 && !netErr && <p className="rounded-2xl bg-white p-4 text-sm text-slate-600">ยังไม่มีข้อมูลสถานี — ระบบกำลังรอข้อมูลรอบแรกจากแหล่งต้นทาง</p>}
