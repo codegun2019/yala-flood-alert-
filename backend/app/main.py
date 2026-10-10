@@ -5,20 +5,21 @@ import asyncio
 import hmac
 import json
 import logging
+import os
 import secrets
 import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, desc, func, insert, select, update
 
-from . import collector, config, forecast, push, risk, status
+from . import collector, config, forecast, push, reports, risk, status
 from .db import (
-    alerts, announcements, data_source_health, get_engine, init_db, notification_logs, notification_preferences,
+    alerts, announcements, data_source_health, flood_reports, get_engine, init_db, notification_logs, notification_preferences,
     help_points, push_subscriptions, rainfall_readings, settings, station_thresholds, stations, upsert, utcnow, water_readings,
 )
 
@@ -259,6 +260,126 @@ def list_help_points():
         rows = conn.execute(select(help_points).where(help_points.c.active.is_(True))
                             .order_by(help_points.c.kind, help_points.c.name)).all()
     return {"points": [_hp(r) for r in rows]}
+
+
+# ---------------------------------------------------------------- citizen flood reports (moderated)
+class ReportIn(BaseModel):
+    lat: float = Field(ge=5.4, le=7.1)
+    lon: float = Field(ge=100.7, le=102.2)
+    depth: Literal["ankle", "knee", "waist", "above"]
+    note: str | None = Field(default=None, max_length=300)
+    photo_b64: str | None = Field(default=None, max_length=int(config.REPORT_MAX_PHOTO_BYTES * 1.4) + 100)
+    website: str | None = None  # honeypot: real users never fill this
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    return (fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "?")) or "?"
+
+
+def _visible_report_filter(now):
+    return (flood_reports.c.status == "approved",
+            flood_reports.c.created_at >= now - timedelta(hours=config.REPORT_VISIBLE_HOURS))
+
+
+@app.post("/api/reports", status_code=201)
+def submit_report(body: ReportIn, request: Request):
+    """Anonymous submission. Stored as 'pending' — NOT visible to anyone until an admin approves it, and
+    never used for risk levels or push alerts."""
+    if body.website:  # bot
+        return {"id": 0, "status": "pending"}
+    try:
+        note = reports.clean_note(body.note)
+        photo = reports.decode_photo(body.photo_b64)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    now = utcnow()
+    ip = reports.hash_ip(_client_ip(request), os.getenv("REPORT_SALT") or os.getenv("ADMIN_TOKEN") or "yala")
+    with get_engine().begin() as conn:
+        def n(since):
+            return conn.execute(select(func.count()).select_from(flood_reports)
+                                .where(flood_reports.c.ip_hash == ip, flood_reports.c.created_at >= since)).scalar() or 0
+        if n(now - timedelta(hours=1)) >= config.REPORT_LIMIT_PER_HOUR or n(now - timedelta(days=1)) >= config.REPORT_LIMIT_PER_DAY:
+            raise HTTPException(429, "ส่งรายงานบ่อยเกินไป กรุณารอสักครู่")
+        rid = conn.execute(insert(flood_reports).values(
+            created_at=now, lat=round(body.lat, 3), lon=round(body.lon, 3), depth=body.depth, note=note,
+            photo=photo, status="pending", ip_hash=ip)).inserted_primary_key[0]
+    return {"id": rid, "status": "pending"}
+
+
+def _report_row(r) -> dict:
+    return {"id": r.id, "lat": r.lat, "lon": r.lon, "depth": r.depth, "depth_label": reports.DEPTHS[r.depth],
+            "note": r.note, "created_at": r.created_at.isoformat(), "has_photo": bool(r.has_photo)}
+
+
+_REPORT_COLS = (flood_reports.c.id, flood_reports.c.lat, flood_reports.c.lon, flood_reports.c.depth, flood_reports.c.note,
+                flood_reports.c.created_at, flood_reports.c.status, (flood_reports.c.photo.isnot(None)).label("has_photo"))
+
+
+@app.get("/api/reports")
+def list_reports():
+    """Approved, recent reports only (citizen-submitted, unofficial)."""
+    now = utcnow()
+    with get_engine().connect() as conn:
+        rows = conn.execute(select(*_REPORT_COLS).where(*_visible_report_filter(now))
+                            .order_by(desc(flood_reports.c.created_at)).limit(100)).all()
+    return {"reports": [_report_row(r) for r in rows], "visible_hours": config.REPORT_VISIBLE_HOURS}
+
+
+def _jpeg(data: bytes) -> Response:
+    return Response(content=data, media_type="image/jpeg", headers={
+        "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox",
+        "Cache-Control": "private, max-age=300"})
+
+
+@app.get("/api/reports/{rid}/photo")
+def report_photo(rid: int):
+    now = utcnow()
+    with get_engine().connect() as conn:
+        row = conn.execute(select(flood_reports.c.photo).where(flood_reports.c.id == rid, *_visible_report_filter(now))).first()
+    if not row or not row.photo:
+        raise HTTPException(404, "not found")
+    return _jpeg(row.photo)
+
+
+@app.get("/api/admin/reports", dependencies=[Depends(require_admin)])
+def admin_reports(status: Literal["pending", "approved", "rejected"] = "pending"):
+    with get_engine().connect() as conn:
+        rows = conn.execute(select(*_REPORT_COLS).where(flood_reports.c.status == status)
+                            .order_by(desc(flood_reports.c.created_at)).limit(100)).all()
+    return {"reports": [{**_report_row(r), "status": r.status} for r in rows]}
+
+
+@app.get("/api/admin/reports/{rid}/photo", dependencies=[Depends(require_admin)])
+def admin_report_photo(rid: int):
+    with get_engine().connect() as conn:
+        row = conn.execute(select(flood_reports.c.photo).where(flood_reports.c.id == rid)).first()
+    if not row or not row.photo:
+        raise HTTPException(404, "not found")
+    return _jpeg(row.photo)
+
+
+class ReviewIn(BaseModel):
+    action: Literal["approve", "reject"]
+
+
+@app.post("/api/admin/reports/{rid}/review", dependencies=[Depends(require_admin)])
+def admin_review_report(rid: int, body: ReviewIn):
+    with get_engine().begin() as conn:
+        n = conn.execute(update(flood_reports).where(flood_reports.c.id == rid).values(
+            status="approved" if body.action == "approve" else "rejected", reviewed_at=utcnow(), ip_hash=None)).rowcount
+        if body.action == "reject":  # no reason to keep the photo of something we won't publish
+            conn.execute(update(flood_reports).where(flood_reports.c.id == rid).values(photo=None))
+    if not n:
+        raise HTTPException(404, "not found")
+    return {"ok": True}
+
+
+@app.delete("/api/admin/reports/{rid}", dependencies=[Depends(require_admin)])
+def admin_delete_report(rid: int):
+    with get_engine().begin() as conn:
+        conn.execute(delete(flood_reports).where(flood_reports.c.id == rid))
+    return {"ok": True}
 
 
 @app.get("/api/cctv")

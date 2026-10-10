@@ -226,3 +226,52 @@ def test_help_points_admin_only_and_validated():
     assert c.put(f"/api/admin/help-points/{pid}", json={**p, "name": "แก้แล้ว"}, headers=h).status_code == 200
     assert c.delete(f"/api/admin/help-points/{pid}", headers=h).status_code == 200
     assert all(x["id"] != pid for x in c.get("/api/help-points").json()["points"])
+
+
+def test_citizen_reports_moderation_and_abuse_guards():
+    import base64, os
+    os.environ["ADMIN_TOKEN"] = "t"
+    from fastapi.testclient import TestClient
+    from app import db, main
+    db.reset_engine(); db.init_db()
+    with db.get_engine().begin() as conn:      # hermetic: the test DB persists between runs
+        conn.execute(db.flood_reports.delete())
+    c = TestClient(main.app)
+    h = {"X-Admin-Token": "t"}
+    jpg = base64.b64encode(b"\xff\xd8\xff\xe0" + b"x" * 100 + b"\xff\xd9").decode()
+    base = {"lat": 6.54, "lon": 101.28, "depth": "knee", "note": "น้ำเข้าบ้านริมถนน"}
+    ip = {"x-forwarded-for": "1.2.3.4"}
+
+    assert c.post("/api/reports", json={**base, "lat": 13.7}, headers=ip).status_code == 422          # outside Yala
+    assert c.post("/api/reports", json={**base, "note": "โทร 081-234-5678"}, headers=ip).status_code == 422
+    assert c.post("/api/reports", json={**base, "note": "ดู https://x.co"}, headers=ip).status_code == 422
+    assert c.post("/api/reports", json={**base, "photo_b64": base64.b64encode(b"<html>").decode()}, headers=ip).status_code == 422
+    assert c.post("/api/reports", json={**base, "website": "spam"}, headers=ip).json()["id"] == 0       # honeypot
+
+    r = c.post("/api/reports", json={**base, "photo_b64": jpg}, headers=ip)
+    assert r.status_code == 201
+    rid = r.json()["id"]
+    # pending => invisible to the public (list + photo), visible to admin only
+    assert all(x["id"] != rid for x in c.get("/api/reports").json()["reports"])
+    assert c.get(f"/api/reports/{rid}/photo").status_code == 404
+    assert c.get("/api/admin/reports").status_code == 401
+    pend = c.get("/api/admin/reports", headers=h).json()["reports"]
+    assert any(x["id"] == rid and x["has_photo"] for x in pend)
+    assert c.get(f"/api/admin/reports/{rid}/photo", headers=h).headers["content-type"] == "image/jpeg"
+
+    assert c.post(f"/api/admin/reports/{rid}/review", json={"action": "approve"}, headers=h).status_code == 200
+    pub = c.get("/api/reports").json()["reports"]
+    assert any(x["id"] == rid and x["depth"] == "knee" for x in pub)
+    assert "ip_hash" not in str(pub) and c.get(f"/api/reports/{rid}/photo").status_code == 200
+
+    # rate limit: 3/hour per client
+    for _ in range(2):
+        assert c.post("/api/reports", json=base, headers={"x-forwarded-for": "9.9.9.9"}).status_code == 201
+    assert c.post("/api/reports", json=base, headers={"x-forwarded-for": "9.9.9.9"}).status_code == 201
+    assert c.post("/api/reports", json=base, headers={"x-forwarded-for": "9.9.9.9"}).status_code == 429
+
+    # reject drops the photo and keeps it private
+    rid2 = c.post("/api/reports", json={**base, "photo_b64": jpg}, headers={"x-forwarded-for": "5.5.5.5"}).json()["id"]
+    c.post(f"/api/admin/reports/{rid2}/review", json={"action": "reject"}, headers=h)
+    assert c.get(f"/api/admin/reports/{rid2}/photo", headers=h).status_code == 404
+    assert all(x["id"] != rid2 for x in c.get("/api/reports").json()["reports"])

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { fmtAge, fmtHM, fmtTime, num, RISK_META, RISK_ORDER } from "@/lib/format";
 import { currentSubscription, loadPrefs, type Prefs, registerSW, updatePrefs } from "@/lib/push";
-import type { Announcement, CctvInfo, CenterStatus, HelpPoint, RainStation, SourceHealth, WaterStation } from "@/lib/types";
+import type { Announcement, CctvInfo, CenterStatus, CitizenReport, HelpPoint, RainStation, SourceHealth, WaterStation } from "@/lib/types";
 import { RiskBadge, Trend } from "@/components/Badges";
 import NotifyPanel from "@/components/NotifyPanel";
 import RainPanel from "@/components/RainPanel";
@@ -14,6 +14,9 @@ import StationSheet from "@/components/StationSheet";
 import { playAlert, soundEnabled, unlockAudio } from "@/lib/sound";
 
 import HelpList from "@/components/HelpList";
+import ResourcesCard from "@/components/ResourcesCard";
+import ReportList from "@/components/ReportList";
+import ReportForm from "@/components/ReportForm";
 import ForecastCard from "@/components/ForecastCard";
 import CenterNotice from "@/components/CenterNotice";
 import MyArea from "@/components/MyArea";
@@ -47,6 +50,8 @@ export default function Home() {
   const [anns, setAnns] = useState<Announcement[]>([]);
   const [cctv, setCctv] = useState<CctvInfo | null>(null);
   const [help, setHelp] = useState<HelpPoint[]>([]);
+  const [reports, setReports] = useState<CitizenReport[]>([]);
+  const [reporting, setReporting] = useState(false);
   const [center, setCenter] = useState<CenterStatus | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [netErr, setNetErr] = useState(false);
@@ -68,6 +73,7 @@ export default function Home() {
       setHealth(w.source_health);
       setAnns(a.announcements);
       api<{ points: HelpPoint[] }>("/api/help-points").then((h) => setHelp(h.points)).catch(() => {});
+      api<{ reports: CitizenReport[] }>("/api/reports").then((r) => setReports(r.reports)).catch(() => {});
       api<{ status: CenterStatus | null }>("/api/center-status").then((c) => setCenter(c.status)).catch(() => {});
       setFetchedAt(w.now);
       setNetErr(false);
@@ -313,12 +319,13 @@ export default function Home() {
                 )}
               </section>
             )}
+            <ResourcesCard />
           </>
         )}
 
         {tab === "map" && (
           <>
-            <MapView water={water} rain={rain} help={help} me={me} onSelect={setSelected} />
+            <MapView water={water} rain={rain} help={help} reports={reports} me={me} onSelect={setSelected} />
             {geoMsg && <p className="px-1 text-sm text-slate-600">{geoMsg}</p>}
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {(["normal", "watch", "high", "critical", "stale", "unknown"] as const).map((r) => (
@@ -326,6 +333,7 @@ export default function Home() {
               ))}
               <button onClick={locate} className="ml-auto inline-flex items-center gap-1 rounded-full bg-sky-700 px-3 py-1.5 text-white"><LocateFixed size={14} /> ตำแหน่งฉัน</button>
             </div>
+            <ReportList reports={reports} onNew={() => setReporting(true)} />
             <HelpList points={help} me={me} />
           </>
         )}
@@ -367,6 +375,7 @@ export default function Home() {
           <a className="inline-flex items-center gap-1 underline" href="/admin"><ShieldAlert size={12} /> เจ้าหน้าที่ศูนย์เฝ้าระวัง</a>
         </footer>
       </main>
+      {reporting && <ReportForm water={water} rain={rain} onClose={() => { setReporting(false); }} />}
 
       <nav className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto grid max-w-2xl grid-cols-6">

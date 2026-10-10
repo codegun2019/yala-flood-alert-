@@ -120,3 +120,15 @@ export const HELP_KIND: Record<HelpPoint["kind"], { label: string; color: string
   supply: { label: "จุดแจกของ/อาหาร", color: "#d97706" },
   other: { label: "จุดช่วยเหลืออื่นๆ", color: "#7c3aed" },
 };
+
+export interface CitizenReport {
+  id: number;
+  lat: number;
+  lon: number;
+  depth: "ankle" | "knee" | "waist" | "above";
+  depth_label: string;
+  note: string | null;
+  created_at: string;
+  has_photo: boolean;
+  status?: "pending" | "approved" | "rejected";
+}

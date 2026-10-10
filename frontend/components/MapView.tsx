@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { CloudRain, LifeBuoy, Pause, Play, Radar } from "lucide-react";
+import { CloudRain, LifeBuoy, Megaphone, Pause, Play, Radar } from "lucide-react";
 import L from "leaflet";
 import { RISK_META, num } from "@/lib/format";
-import { HELP_KIND, type HelpPoint, type RainStation, type WaterStation } from "@/lib/types";
+import { HELP_KIND, type CitizenReport, type HelpPoint, type RainStation, type WaterStation } from "@/lib/types";
 
 const DROP_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#fff" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>';
@@ -18,13 +18,14 @@ const RADAR_API = "https://api.rainviewer.com/public/weather-maps.json";
 const hm = new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false });
 
 export default function MapView({
-  water, rain, help = [], me, onSelect,
-}: { water: WaterStation[]; rain: RainStation[]; help?: HelpPoint[]; me: [number, number] | null; onSelect: (id: string) => void }) {
+  water, rain, help = [], reports = [], me, onSelect,
+}: { water: WaterStation[]; rain: RainStation[]; help?: HelpPoint[]; reports?: CitizenReport[]; me: [number, number] | null; onSelect: (id: string) => void }) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
   const [showRain, setShowRain] = useState(true);
   const [showHelp, setShowHelp] = useState(true);
+  const [showReports, setShowReports] = useState(true);
 
   // ---- เรดาร์ฝน (RainViewer) — ปิดไว้เป็นค่าเริ่มต้น; เปิดแล้วเบราว์เซอร์จะเรียกบริการภายนอกโดยตรง
   const [showRadar, setShowRadar] = useState(false);
@@ -124,12 +125,20 @@ export default function MapView({
         .bindTooltip(`${h.name}<br/>${k.label}${h.phone ? " · " + h.phone : ""}`)
         .addTo(g);
     }
+    for (const r of showReports ? reports : []) {
+      L.marker([r.lat, r.lon], {
+        zIndexOffset: 600,
+        icon: L.divIcon({ className: "", html: `<div style="width:24px;height:24px;border-radius:6px;transform:rotate(45deg);background:#f97316;border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.4);display:grid;place-items:center"><span style="transform:rotate(-45deg);color:#fff;font-weight:800;font-size:13px;line-height:1">!</span></div>`, iconSize: [24, 24], iconAnchor: [12, 12] }),
+      })
+        .bindTooltip(`รายงานจากประชาชน (ไม่ใช่ข้อมูลทางการ)<br/>น้ำท่วม${r.depth_label}${r.note ? "<br/>" + r.note.replace(/[<>&]/g, "") : ""}`)
+        .addTo(g);
+    }
     if (me) L.circleMarker(me, { radius: 8, color: "#fff", weight: 3, fillColor: "#2563eb", fillOpacity: 1 }).bindTooltip("ตำแหน่งของคุณ").addTo(g);
     if (pts.length && !(map.current as any)._fitted) {
       map.current.fitBounds(L.latLngBounds(pts).pad(0.25));
       (map.current as any)._fitted = true;
     }
-  }, [water, rain, help, me, onSelect, showRain, showHelp]);
+  }, [water, rain, help, reports, me, onSelect, showRain, showHelp, showReports]);
 
   useEffect(() => {
     if (me && map.current) map.current.setView(me, 12);
@@ -150,6 +159,14 @@ export default function MapView({
           className={`absolute right-3 top-[6.5rem] z-[500] inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold shadow ${showHelp ? "bg-emerald-700 text-white" : "bg-white text-slate-700"}`}
         >
           <LifeBuoy size={16} /> จุดช่วยเหลือ
+        </button>
+      )}
+      {reports.length > 0 && (
+        <button
+          onClick={() => setShowReports((v) => !v)}
+          className={`absolute right-3 top-[9.5rem] z-[500] inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold shadow ${showReports ? "bg-orange-600 text-white" : "bg-white text-slate-700"}`}
+        >
+          <Megaphone size={16} /> รายงาน
         </button>
       )}
       <button

@@ -78,3 +78,9 @@ SOURCE_LINKS = [
     {"name": "ThaiWater จังหวัดยะลา", "url": "https://yala.thaiwater.net/"},
     {"name": "ศูนย์รวมข้อมูลสภาพอากาศเทศบาล (เรดาร์ฝน)", "url": "https://sites.google.com/view/ycm-rd"},
 ]
+
+# Citizen flood reports (moderated; never used for risk levels or push alerts)
+REPORT_MAX_PHOTO_BYTES = 220_000
+REPORT_VISIBLE_HOURS = 12          # approved reports disappear from the public view after this long
+REPORT_LIMIT_PER_HOUR = 3
+REPORT_LIMIT_PER_DAY = 8

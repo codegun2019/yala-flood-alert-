@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { fmtAge, fmtTime, num, RISK_META, THRESHOLD_SOURCE } from "@/lib/format";
 import { HELP_KIND, type Announcement, type HelpPoint, type WaterStation } from "@/lib/types";
 import { RiskBadge } from "@/components/Badges";
+import ReportsQueue from "@/components/ReportsQueue";
 
 interface AdminStation extends WaterStation {
   override: { watch_msl: number; high_msl: number; critical_msl: number; verified: boolean; note: string | null } | null;
@@ -112,6 +113,7 @@ export default function Admin() {
         </div>
       </section>
 
+      <ReportsQueue token={token} onDone={(m) => setMsg(m)} />
       <HelpPointsForm token={token} onDone={(m) => setMsg(m)} />
       <CenterForm token={token} onDone={(m) => setMsg(m)} />
       <AnnouncementForm token={token} onDone={(m) => { setMsg(m); load(token); }} />

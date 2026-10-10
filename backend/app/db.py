@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, MetaData, String, Table, Text,
+    Boolean, Column, DateTime, Float, LargeBinary, ForeignKey, Index, Integer, MetaData, String, Table, Text,
     TypeDecorator, create_engine, event,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -162,6 +162,21 @@ help_points = Table(
     Column("active", Boolean, nullable=False, default=True),
     Column("updated_at", UTCDateTime, nullable=False),
 )
+
+flood_reports = Table(
+    "flood_reports", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("created_at", UTCDateTime, nullable=False),
+    Column("lat", Float, nullable=False),
+    Column("lon", Float, nullable=False),
+    Column("depth", String(16), nullable=False),  # ankle | knee | waist | above
+    Column("note", String(300)),
+    Column("photo", LargeBinary),                  # re-encoded JPEG, <= MAX_PHOTO_BYTES
+    Column("status", String(12), nullable=False, default="pending"),  # pending | approved | rejected
+    Column("ip_hash", String(64)),                 # salted hash, only for rate limiting; cleared on review
+    Column("reviewed_at", UTCDateTime),
+)
+Index("ix_reports_status", flood_reports.c.status, flood_reports.c.created_at)
 
 settings = Table(
     "settings", metadata,
