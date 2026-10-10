@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { CloudRain, Pause, Play, Radar } from "lucide-react";
+import { CloudRain, LifeBuoy, Pause, Play, Radar } from "lucide-react";
 import L from "leaflet";
 import { RISK_META, num } from "@/lib/format";
-import type { RainStation, WaterStation } from "@/lib/types";
+import { HELP_KIND, type HelpPoint, type RainStation, type WaterStation } from "@/lib/types";
 
 const DROP_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#fff" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></svg>';
@@ -18,12 +18,13 @@ const RADAR_API = "https://api.rainviewer.com/public/weather-maps.json";
 const hm = new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false });
 
 export default function MapView({
-  water, rain, me, onSelect,
-}: { water: WaterStation[]; rain: RainStation[]; me: [number, number] | null; onSelect: (id: string) => void }) {
+  water, rain, help = [], me, onSelect,
+}: { water: WaterStation[]; rain: RainStation[]; help?: HelpPoint[]; me: [number, number] | null; onSelect: (id: string) => void }) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
   const [showRain, setShowRain] = useState(true);
+  const [showHelp, setShowHelp] = useState(true);
 
   // ---- เรดาร์ฝน (RainViewer) — ปิดไว้เป็นค่าเริ่มต้น; เปิดแล้วเบราว์เซอร์จะเรียกบริการภายนอกโดยตรง
   const [showRadar, setShowRadar] = useState(false);
@@ -114,12 +115,21 @@ export default function MapView({
         .bindTooltip(`${s.name}<br/>ฝน 24 ชม. ${s.rain_24h ?? "-"} มม.`)
         .addTo(g);
     }
+    for (const h of showHelp ? help : []) {
+      const k = HELP_KIND[h.kind];
+      L.marker([h.lat, h.lon], {
+        zIndexOffset: 700,
+        icon: L.divIcon({ className: "", html: `<div style="width:26px;height:26px;border-radius:8px;background:${k.color};display:grid;place-items:center;border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.4);color:#fff;font-weight:800;font-size:15px;line-height:1">+</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }),
+      })
+        .bindTooltip(`${h.name}<br/>${k.label}${h.phone ? " · " + h.phone : ""}`)
+        .addTo(g);
+    }
     if (me) L.circleMarker(me, { radius: 8, color: "#fff", weight: 3, fillColor: "#2563eb", fillOpacity: 1 }).bindTooltip("ตำแหน่งของคุณ").addTo(g);
     if (pts.length && !(map.current as any)._fitted) {
       map.current.fitBounds(L.latLngBounds(pts).pad(0.25));
       (map.current as any)._fitted = true;
     }
-  }, [water, rain, me, onSelect, showRain]);
+  }, [water, rain, help, me, onSelect, showRain, showHelp]);
 
   useEffect(() => {
     if (me && map.current) map.current.setView(me, 12);
@@ -134,6 +144,14 @@ export default function MapView({
       >
         <CloudRain size={16} /> ฝน
       </button>
+      {help.length > 0 && (
+        <button
+          onClick={() => setShowHelp((v) => !v)}
+          className={`absolute right-3 top-[6.5rem] z-[500] inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold shadow ${showHelp ? "bg-emerald-700 text-white" : "bg-white text-slate-700"}`}
+        >
+          <LifeBuoy size={16} /> จุดช่วยเหลือ
+        </button>
+      )}
       <button
         onClick={() => setShowRadar((v) => !v)}
         className={`absolute right-3 top-14 z-[500] inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold shadow ${showRadar ? "bg-sky-700 text-white" : "bg-white text-slate-700"}`}

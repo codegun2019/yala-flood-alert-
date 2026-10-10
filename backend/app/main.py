@@ -19,7 +19,7 @@ from sqlalchemy import delete, desc, func, insert, select, update
 from . import collector, config, forecast, push, risk, status
 from .db import (
     alerts, announcements, data_source_health, get_engine, init_db, notification_logs, notification_preferences,
-    push_subscriptions, rainfall_readings, settings, station_thresholds, stations, upsert, utcnow, water_readings,
+    help_points, push_subscriptions, rainfall_readings, settings, station_thresholds, stations, upsert, utcnow, water_readings,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -245,6 +245,20 @@ def rain_forecast(lat: float | None = Query(default=None), lon: float | None = Q
     if data is None:
         raise HTTPException(503, "forecast unavailable")
     return data
+
+
+def _hp(r) -> dict:
+    return {"id": r.id, "kind": r.kind, "name": r.name, "amphoe": r.amphoe, "tumbon": r.tumbon, "lat": r.lat, "lon": r.lon,
+            "phone": r.phone, "detail": r.detail, "updated_at": r.updated_at.isoformat()}
+
+
+@app.get("/api/help-points")
+def list_help_points():
+    """Shelters / medical / supply points entered by admins. No built-in data: we never invent locations."""
+    with get_engine().connect() as conn:
+        rows = conn.execute(select(help_points).where(help_points.c.active.is_(True))
+                            .order_by(help_points.c.kind, help_points.c.name)).all()
+    return {"points": [_hp(r) for r in rows]}
 
 
 @app.get("/api/cctv")
@@ -515,6 +529,47 @@ def admin_set_center_status(body: CenterStatusIn):
 def admin_clear_center_status():
     with get_engine().begin() as conn:
         conn.execute(delete(settings).where(settings.c.key == CENTER_KEY))
+    return {"ok": True}
+
+
+class HelpPointIn(BaseModel):
+    kind: Literal["shelter", "medical", "supply", "other"]
+    name: str = Field(min_length=1, max_length=200)
+    amphoe: str | None = Field(default=None, max_length=64)
+    tumbon: str | None = Field(default=None, max_length=64)
+    lat: float = Field(ge=5.4, le=7.1)      # must be inside Yala (typo guard)
+    lon: float = Field(ge=100.7, le=102.2)
+    phone: str | None = Field(default=None, max_length=30, pattern=r"^[0-9+\-\s(),]*$")
+    detail: str | None = Field(default=None, max_length=1000)
+
+
+@app.get("/api/admin/help-points", dependencies=[Depends(require_admin)])
+def admin_list_help_points():
+    with get_engine().connect() as conn:
+        rows = conn.execute(select(help_points).order_by(help_points.c.id.desc())).all()
+    return {"points": [{**_hp(r), "active": r.active} for r in rows]}
+
+
+@app.post("/api/admin/help-points", dependencies=[Depends(require_admin)])
+def admin_create_help_point(body: HelpPointIn):
+    with get_engine().begin() as conn:
+        pid = conn.execute(insert(help_points).values(**body.model_dump(), active=True, updated_at=utcnow())).inserted_primary_key[0]
+    return {"id": pid}
+
+
+@app.put("/api/admin/help-points/{pid}", dependencies=[Depends(require_admin)])
+def admin_update_help_point(pid: int, body: HelpPointIn):
+    with get_engine().begin() as conn:
+        n = conn.execute(update(help_points).where(help_points.c.id == pid).values(**body.model_dump(), updated_at=utcnow())).rowcount
+    if not n:
+        raise HTTPException(404, "not found")
+    return {"ok": True}
+
+
+@app.delete("/api/admin/help-points/{pid}", dependencies=[Depends(require_admin)])
+def admin_delete_help_point(pid: int):
+    with get_engine().begin() as conn:
+        conn.execute(delete(help_points).where(help_points.c.id == pid))
     return {"ok": True}
 
 

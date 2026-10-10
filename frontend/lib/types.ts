@@ -100,3 +100,23 @@ export interface RainForecast {
   hours: { t: string; mm: number; prob: number | null }[];
   summary: { total_mm: number; max_prob: number; level: "none" | "light" | "moderate" | "heavy" | "very_heavy"; label: string; peak_at: string | null; peak_mm: number };
 }
+
+export interface HelpPoint {
+  id: number;
+  kind: "shelter" | "medical" | "supply" | "other";
+  name: string;
+  amphoe: string | null;
+  tumbon: string | null;
+  lat: number;
+  lon: number;
+  phone: string | null;
+  detail: string | null;
+  updated_at: string;
+}
+
+export const HELP_KIND: Record<HelpPoint["kind"], { label: string; color: string }> = {
+  shelter: { label: "ศูนย์พักพิง", color: "#16a34a" },
+  medical: { label: "จุดแพทย์/พยาบาล", color: "#dc2626" },
+  supply: { label: "จุดแจกของ/อาหาร", color: "#d97706" },
+  other: { label: "จุดช่วยเหลืออื่นๆ", color: "#7c3aed" },
+};

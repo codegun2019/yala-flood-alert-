@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { fmtAge, fmtHM, fmtTime, num, RISK_META, RISK_ORDER } from "@/lib/format";
 import { currentSubscription, loadPrefs, type Prefs, registerSW, updatePrefs } from "@/lib/push";
-import type { Announcement, CctvInfo, CenterStatus, RainStation, SourceHealth, WaterStation } from "@/lib/types";
+import type { Announcement, CctvInfo, CenterStatus, HelpPoint, RainStation, SourceHealth, WaterStation } from "@/lib/types";
 import { RiskBadge, Trend } from "@/components/Badges";
 import NotifyPanel from "@/components/NotifyPanel";
 import RainPanel from "@/components/RainPanel";
@@ -13,6 +13,7 @@ import InstallCard from "@/components/InstallCard";
 import StationSheet from "@/components/StationSheet";
 import { playAlert, soundEnabled, unlockAudio } from "@/lib/sound";
 
+import HelpList from "@/components/HelpList";
 import ForecastCard from "@/components/ForecastCard";
 import CenterNotice from "@/components/CenterNotice";
 import MyArea from "@/components/MyArea";
@@ -45,6 +46,7 @@ export default function Home() {
   const [health, setHealth] = useState<SourceHealth[]>([]);
   const [anns, setAnns] = useState<Announcement[]>([]);
   const [cctv, setCctv] = useState<CctvInfo | null>(null);
+  const [help, setHelp] = useState<HelpPoint[]>([]);
   const [center, setCenter] = useState<CenterStatus | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [netErr, setNetErr] = useState(false);
@@ -65,6 +67,7 @@ export default function Home() {
       setRain(r.stations);
       setHealth(w.source_health);
       setAnns(a.announcements);
+      api<{ points: HelpPoint[] }>("/api/help-points").then((h) => setHelp(h.points)).catch(() => {});
       api<{ status: CenterStatus | null }>("/api/center-status").then((c) => setCenter(c.status)).catch(() => {});
       setFetchedAt(w.now);
       setNetErr(false);
@@ -315,7 +318,7 @@ export default function Home() {
 
         {tab === "map" && (
           <>
-            <MapView water={water} rain={rain} me={me} onSelect={setSelected} />
+            <MapView water={water} rain={rain} help={help} me={me} onSelect={setSelected} />
             {geoMsg && <p className="px-1 text-sm text-slate-600">{geoMsg}</p>}
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {(["normal", "watch", "high", "critical", "stale", "unknown"] as const).map((r) => (
@@ -323,6 +326,7 @@ export default function Home() {
               ))}
               <button onClick={locate} className="ml-auto inline-flex items-center gap-1 rounded-full bg-sky-700 px-3 py-1.5 text-white"><LocateFixed size={14} /> ตำแหน่งฉัน</button>
             </div>
+            <HelpList points={help} me={me} />
           </>
         )}
 

@@ -148,6 +148,21 @@ announcements = Table(
     Column("expires_at", UTCDateTime),
 )
 
+help_points = Table(
+    "help_points", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("kind", String(16), nullable=False),  # shelter | medical | supply | other
+    Column("name", String(200), nullable=False),
+    Column("amphoe", String(64)),
+    Column("tumbon", String(64)),
+    Column("lat", Float, nullable=False),
+    Column("lon", Float, nullable=False),
+    Column("phone", String(30)),
+    Column("detail", Text),
+    Column("active", Boolean, nullable=False, default=True),
+    Column("updated_at", UTCDateTime, nullable=False),
+)
+
 settings = Table(
     "settings", metadata,
     Column("key", String(64), primary_key=True),

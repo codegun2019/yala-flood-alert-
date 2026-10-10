@@ -206,3 +206,23 @@ def test_rain_forecast_parse_and_summary():
     import pytest
     with pytest.raises(ValueError):
         forecast.snap(13.7, 100.5)   # Bangkok: outside Yala
+
+
+def test_help_points_admin_only_and_validated():
+    import os
+    os.environ["ADMIN_TOKEN"] = "t"
+    from fastapi.testclient import TestClient
+    from app import db, main
+    db.reset_engine(); db.init_db()
+    c = TestClient(main.app)
+    h = {"X-Admin-Token": "t"}
+    p = {"kind": "shelter", "name": "ศูนย์พักพิงทดสอบ", "lat": 6.54, "lon": 101.28, "phone": "073-123456"}
+    assert c.post("/api/admin/help-points", json=p).status_code == 401
+    assert c.post("/api/admin/help-points", json={**p, "lat": 13.7}, headers=h).status_code == 422   # outside Yala
+    assert c.post("/api/admin/help-points", json={**p, "phone": "x<y"}, headers=h).status_code == 422
+    pid = c.post("/api/admin/help-points", json=p, headers=h).json()["id"]
+    pts = c.get("/api/help-points").json()["points"]
+    assert [x["name"] for x in pts if x["id"] == pid] == ["ศูนย์พักพิงทดสอบ"]
+    assert c.put(f"/api/admin/help-points/{pid}", json={**p, "name": "แก้แล้ว"}, headers=h).status_code == 200
+    assert c.delete(f"/api/admin/help-points/{pid}", headers=h).status_code == 200
+    assert all(x["id"] != pid for x in c.get("/api/help-points").json()["points"])

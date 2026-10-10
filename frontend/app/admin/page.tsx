@@ -3,7 +3,7 @@ import { Megaphone, MonitorCog, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { fmtAge, fmtTime, num, RISK_META, THRESHOLD_SOURCE } from "@/lib/format";
-import type { Announcement, WaterStation } from "@/lib/types";
+import { HELP_KIND, type Announcement, type HelpPoint, type WaterStation } from "@/lib/types";
 import { RiskBadge } from "@/components/Badges";
 
 interface AdminStation extends WaterStation {
@@ -112,6 +112,7 @@ export default function Admin() {
         </div>
       </section>
 
+      <HelpPointsForm token={token} onDone={(m) => setMsg(m)} />
       <CenterForm token={token} onDone={(m) => setMsg(m)} />
       <AnnouncementForm token={token} onDone={(m) => { setMsg(m); load(token); }} />
       <section className="rounded-2xl bg-white p-4 shadow-sm">
@@ -273,6 +274,64 @@ function CenterForm({ token, onDone }: { token: string; onDone: (m: string) => v
         <button disabled={busy} onClick={save} className="rounded-xl bg-sky-700 px-5 py-2.5 font-semibold text-white disabled:opacity-50">บันทึก</button>
         <button disabled={busy} onClick={clear} className="rounded-xl bg-slate-200 px-5 py-2.5 font-semibold disabled:opacity-50">ซ่อนป้าย</button>
       </div>
+    </section>
+  );
+}
+
+function HelpPointsForm({ token, onDone }: { token: string; onDone: (m: string) => void }) {
+  const [list, setList] = useState<(HelpPoint & { active: boolean })[]>([]);
+  const [kind, setKind] = useState<HelpPoint["kind"]>("shelter");
+  const [name, setName] = useState("");
+  const [amphoe, setAmphoe] = useState("");
+  const [tumbon, setTumbon] = useState("");
+  const [coord, setCoord] = useState(""); // วางจาก Google Maps: "6.5400, 101.2800"
+  const [phone, setPhone] = useState("");
+  const [detail, setDetail] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    api<{ points: (HelpPoint & { active: boolean })[] }>("/api/admin/help-points", { admin: token }).then((r) => setList(r.points)).catch(() => {});
+  }, [token]);
+  useEffect(load, [load]);
+
+  const add = async () => {
+    const m = coord.match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
+    if (!name.trim() || !m) return onDone("กรอกชื่อและพิกัด (วางจาก Google Maps เช่น 6.5400, 101.2800)");
+    setBusy(true);
+    try {
+      await api("/api/admin/help-points", { method: "POST", admin: token, body: JSON.stringify({ kind, name, amphoe: amphoe || null, tumbon: tumbon || null, lat: Number(m[1]), lon: Number(m[2]), phone: phone || null, detail: detail || null }) });
+      setName(""); setCoord(""); setPhone(""); setDetail(""); setTumbon("");
+      onDone("เพิ่มจุดช่วยเหลือแล้ว"); load();
+    } catch (e: any) { onDone("ไม่สำเร็จ: " + e.message); } finally { setBusy(false); }
+  };
+  const del = async (id: number) => {
+    if (!confirm("ลบจุดช่วยเหลือนี้?")) return;
+    await api(`/api/admin/help-points/${id}`, { method: "DELETE", admin: token }).catch(() => {});
+    onDone("ลบแล้ว"); load();
+  };
+
+  return (
+    <section className="rounded-2xl bg-white p-4 shadow-sm">
+      <h2 className="font-bold">จุดช่วยเหลือ (ศูนย์พักพิง / จุดแพทย์ / จุดแจกของ)</h2>
+      <p className="text-xs text-slate-500">ระบบไม่มีข้อมูลตั้งต้น — เพิ่มเฉพาะจุดที่หน่วยงานยืนยันแล้ว และลบเมื่อปิดให้บริการ</p>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <select value={kind} onChange={(e) => setKind(e.target.value as HelpPoint["kind"])} className="col-span-2 rounded-xl border border-slate-300 p-2.5">
+          {Object.entries(HELP_KIND).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={200} placeholder="ชื่อสถานที่" className="col-span-2 rounded-xl border border-slate-300 p-2.5" />
+        <input value={amphoe} onChange={(e) => setAmphoe(e.target.value)} placeholder="อำเภอ" className="rounded-xl border border-slate-300 p-2.5" />
+        <input value={tumbon} onChange={(e) => setTumbon(e.target.value)} placeholder="ตำบล" className="rounded-xl border border-slate-300 p-2.5" />
+        <input value={coord} onChange={(e) => setCoord(e.target.value)} placeholder="พิกัด เช่น 6.5400, 101.2800" className="col-span-2 rounded-xl border border-slate-300 p-2.5" />
+        <input value={phone} onChange={(e) => setPhone(e.target.value)} maxLength={30} placeholder="เบอร์โทร" className="col-span-2 rounded-xl border border-slate-300 p-2.5" />
+        <textarea value={detail} onChange={(e) => setDetail(e.target.value)} maxLength={1000} rows={2} placeholder="รายละเอียด เช่น รับได้กี่คน เวลาเปิด" className="col-span-2 rounded-xl border border-slate-300 p-2.5" />
+      </div>
+      <button disabled={busy} onClick={add} className="mt-3 rounded-xl bg-emerald-700 px-5 py-2.5 font-semibold text-white disabled:opacity-50">เพิ่มจุดช่วยเหลือ</button>
+      {list.map((p) => (
+        <div key={p.id} className="mt-2 flex items-start justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm">
+          <div className="min-w-0"><b>{p.name}</b> <span className="text-xs text-slate-500">({HELP_KIND[p.kind].label}{p.phone && ` · ${p.phone}`})</span></div>
+          <button className="shrink-0 rounded-lg bg-red-100 px-3 py-1 text-red-800" onClick={() => del(p.id)}>ลบ</button>
+        </div>
+      ))}
     </section>
   );
 }
