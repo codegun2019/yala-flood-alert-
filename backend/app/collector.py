@@ -6,7 +6,7 @@ import logging
 import threading
 from datetime import timedelta
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import func, insert, select, text, update
 
 from . import config, push, status
 from .alerts import AlertDraft, plan_alerts
@@ -131,6 +131,37 @@ def run_once(engine, source_names: list[str] | None = None) -> dict:
             summary["sources"][src.name] = {"error": err, **stats}
         summary["alerts"] = evaluate_and_alert(engine, utcnow())
         return summary
+
+
+_ADVISORY_KEY = 727_001
+
+
+def ensure_fresh(engine) -> bool:
+    """Serverless fallback: there is no background loop, so a visitor's request refreshes the data when it is
+    older than POLL_SECONDS. A DB advisory lock (Postgres) / process lock keeps parallel instances from
+    collecting (and alerting) twice. Returns True if a collection ran. Never raises."""
+    try:
+        with engine.connect() as conn:
+            last = conn.execute(select(func.max(data_source_health.c.last_attempt_at))).scalar()
+        if last is not None and (utcnow() - last).total_seconds() < config.POLL_SECONDS - 30:
+            return False
+        if engine.dialect.name == "postgresql":
+            with engine.connect() as lock_conn:
+                if not lock_conn.execute(text("select pg_try_advisory_lock(:k)"), {"k": _ADVISORY_KEY}).scalar():
+                    return False
+                try:
+                    run_once(engine)
+                finally:
+                    lock_conn.execute(text("select pg_advisory_unlock(:k)"), {"k": _ADVISORY_KEY})
+                    lock_conn.commit()
+        else:
+            if _lock.locked():
+                return False
+            run_once(engine)
+        return True
+    except Exception:
+        log.exception("ensure_fresh failed")
+        return False
 
 
 async def loop(engine):

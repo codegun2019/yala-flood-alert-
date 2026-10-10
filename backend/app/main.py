@@ -85,11 +85,22 @@ app = FastAPI(title="YALA FLOOD ALERT API", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=config.FRONTEND_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
 
+_REFRESH_PATHS = ("/api/stations", "/api/water/latest", "/api/rainfall/latest", "/api/alerts", "/api/system-status")
+
+
 @app.middleware("http")
 async def _ensure_boot(request, call_next):
     if not _booted:
         await asyncio.to_thread(boot)
+    # Serverless has no background loop: refresh stale data on demand (backup to the external cron).
+    if config.SERVERLESS and request.method == "GET" and request.url.path.startswith(_REFRESH_PATHS):
+        await asyncio.to_thread(collector.ensure_fresh, get_engine())
     return await call_next(request)
+
+
+@app.get("/")
+def root():
+    return {"service": "YALA FLOOD ALERT API", "docs": "/docs", "status": "/api/system-status"}
 
 
 def require_admin(x_admin_token: str | None = Header(default=None)):
