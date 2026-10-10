@@ -168,3 +168,22 @@ def test_city_parse_rain_and_broken_sensor():
         d = {**CITY, "waterLevelDetail": {**CITY["waterLevelDetail"], "waterLevel": {"value": "26.19", "status": bad}}}
         assert parse_detail("abc", d)[0] is None
     assert parse_detail("abc", {**CITY, "transactionIntervalHour": None}) == (None, None)
+
+
+def test_center_status_roundtrip(tmp_path, monkeypatch):
+    """Admin-only setting; empty by default so the UI never claims a centre state nobody declared."""
+    import os
+    os.environ["ADMIN_TOKEN"] = "t"
+    from fastapi.testclient import TestClient
+    from app import db, main
+    db.reset_engine(); db.init_db()
+    c = TestClient(main.app)
+    assert c.get("/api/center-status").json() == {"status": None}
+    body = {"state": "closed", "text": "ยังไม่เปิดศูนย์อย่างเป็นทางการ", "phone": "1784"}
+    assert c.put("/api/admin/center-status", json=body).status_code == 401
+    assert c.put("/api/admin/center-status", json=body, headers={"X-Admin-Token": "t"}).status_code == 200
+    got = c.get("/api/center-status").json()["status"]
+    assert got["state"] == "closed" and got["phone"] == "1784" and got["updated_at"]
+    assert c.put("/api/admin/center-status", json={**body, "phone": "<script>"}, headers={"X-Admin-Token": "t"}).status_code == 422
+    assert c.delete("/api/admin/center-status", headers={"X-Admin-Token": "t"}).status_code == 200
+    assert c.get("/api/center-status").json() == {"status": None}

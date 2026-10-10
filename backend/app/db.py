@@ -148,6 +148,13 @@ announcements = Table(
     Column("expires_at", UTCDateTime),
 )
 
+settings = Table(
+    "settings", metadata,
+    Column("key", String(64), primary_key=True),
+    Column("value", Text, nullable=False),
+    Column("updated_at", UTCDateTime, nullable=False),
+)
+
 data_source_health = Table(
     "data_source_health", metadata,
     Column("source", String(32), primary_key=True),

@@ -1,11 +1,11 @@
 "use client";
 import dynamic from "next/dynamic";
-import { BellRing, Code2, Building2, Maximize2, Play, Cctv, CloudRain, Droplets, ExternalLink, FlaskConical, LocateFixed, MapPinned, Megaphone, Phone, RefreshCw, Share2, ShieldAlert, TriangleAlert, Waves, WifiOff, X, type LucideIcon } from "lucide-react";
+import { BellRing, Code2, Eye, Building2, Maximize2, Play, Cctv, CloudRain, Droplets, ExternalLink, FlaskConical, LocateFixed, MapPinned, Megaphone, Phone, RefreshCw, Share2, ShieldAlert, TriangleAlert, Waves, WifiOff, X, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { fmtAge, fmtHM, fmtTime, num, RISK_META, RISK_ORDER } from "@/lib/format";
 import { currentSubscription, loadPrefs, type Prefs, registerSW, updatePrefs } from "@/lib/push";
-import type { Announcement, CctvInfo, RainStation, SourceHealth, WaterStation } from "@/lib/types";
+import type { Announcement, CctvInfo, CenterStatus, RainStation, SourceHealth, WaterStation } from "@/lib/types";
 import { RiskBadge, Trend } from "@/components/Badges";
 import NotifyPanel from "@/components/NotifyPanel";
 import RainPanel from "@/components/RainPanel";
@@ -13,6 +13,7 @@ import InstallCard from "@/components/InstallCard";
 import StationSheet from "@/components/StationSheet";
 import { playAlert, soundEnabled, unlockAudio } from "@/lib/sound";
 
+import CenterNotice from "@/components/CenterNotice";
 import MyArea from "@/components/MyArea";
 import DeveloperPanel from "@/components/DeveloperPanel";
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false, loading: () => <div className="h-96 animate-pulse rounded-2xl bg-slate-200" /> });
@@ -43,6 +44,7 @@ export default function Home() {
   const [health, setHealth] = useState<SourceHealth[]>([]);
   const [anns, setAnns] = useState<Announcement[]>([]);
   const [cctv, setCctv] = useState<CctvInfo | null>(null);
+  const [center, setCenter] = useState<CenterStatus | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [netErr, setNetErr] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -62,6 +64,7 @@ export default function Home() {
       setRain(r.stations);
       setHealth(w.source_health);
       setAnns(a.announcements);
+      api<{ status: CenterStatus | null }>("/api/center-status").then((c) => setCenter(c.status)).catch(() => {});
       setFetchedAt(w.now);
       setNetErr(false);
     } catch {
@@ -120,6 +123,17 @@ export default function Home() {
     water.forEach((s) => (c[s.risk] = (c[s.risk] || 0) + 1));
     return c;
   }, [water]);
+  const [showAll, setShowAll] = useState(false);
+  // สถานีที่ต้องจับตา: เสี่ยง/ข้อมูลล่าช้า/น้ำขึ้นเร็ว หรือกำลังขึ้นและเหลือไม่ถึง 5 ม. ก่อนวิกฤต
+  const attention = useMemo(
+    () => sorted.filter((s) => ["critical", "high", "watch", "stale"].includes(s.risk) || s.rapid_rise ||
+      (s.trend === "rising" && s.margin_to_critical != null && s.margin_to_critical < 5)),
+    [sorted]
+  );
+  const watchList = useMemo(() => {
+    if (attention.length) return attention.slice(0, 6);
+    return sorted.filter((s) => s.margin_to_critical != null).sort((a, b) => a.margin_to_critical! - b.margin_to_critical!).slice(0, 3);
+  }, [attention, sorted]);
   const sel = water.find((s) => s.id === selected) ?? null;
   const heavyRain = rain.filter((r) => r.rain_level === "heavy" || r.rain_level === "very_heavy");
   const unhealthy = health.length === 0 ? loaded && !netErr : health.some((h) => !h.ok);
@@ -246,13 +260,20 @@ export default function Home() {
               </button>
             )}
 
+            <CenterNotice status={center} />
             <MyArea water={water} rain={rain} onSelect={setSelected} />
 
             {!loaded && [0, 1, 2].map((i) => <div key={i} className="h-24 animate-pulse rounded-2xl bg-slate-200" />)}
             {loaded && water.length === 0 && !netErr && <p className="rounded-2xl bg-white p-4 text-sm text-slate-600">ยังไม่มีข้อมูลสถานี — ระบบกำลังรอข้อมูลรอบแรกจากแหล่งต้นทาง</p>}
 
-            <section className="space-y-2">
-              {sorted.map((s) => (
+            {loaded && water.length > 0 && (
+              <section className="space-y-2">
+                <div className="flex items-end justify-between px-1">
+                  <h2 className="flex items-center gap-1.5 font-bold"><Eye size={18} className="text-sky-700" /> {showAll ? `สถานีทั้งหมด (${sorted.length})` : attention.length ? "สถานีที่ต้องจับตา" : "สถานีที่ใกล้เกณฑ์วิกฤตที่สุด"}</h2>
+                  {!showAll && attention.length > 0 && <span className="text-xs text-slate-500">{attention.length} จาก {sorted.length} สถานี</span>}
+                </div>
+                {!showAll && attention.length === 0 && <p className="px-1 text-xs text-slate-600">ขณะนี้ไม่มีสถานีที่เสี่ยงหรือน้ำกำลังขึ้นใกล้เกณฑ์ — แสดง 3 สถานีที่เหลือระยะถึงวิกฤตน้อยที่สุดแทน</p>}
+                {(showAll ? sorted : watchList).map((s) => (
                 <button key={s.id} onClick={() => setSelected(s.id)}
                   className={`block w-full rounded-2xl bg-white p-3 text-left shadow-sm ring-1 ${RISK_META[s.risk].ring} ${netErr ? "opacity-60" : ""}`}>
                   <div className="flex items-start justify-between gap-2">
@@ -279,8 +300,14 @@ export default function Home() {
                   </div>
                   {prefs.stations.includes(s.id) && <div className="mt-1 flex items-center gap-1 text-xs text-sky-700"><BellRing size={12} /> กำลังติดตาม</div>}
                 </button>
-              ))}
-            </section>
+                ))}
+                {sorted.length > watchList.length && (
+                  <button onClick={() => setShowAll((v) => !v)} className="w-full rounded-2xl bg-white py-3 text-sm font-semibold text-sky-800 shadow-sm ring-1 ring-slate-200">
+                    {showAll ? "แสดงเฉพาะสถานีที่ต้องจับตา" : `ดูสถานีทั้งหมด (${sorted.length})`}
+                  </button>
+                )}
+              </section>
+            )}
           </>
         )}
 

@@ -83,3 +83,11 @@ export interface CctvInfo {
   cameras: { id: string; name: string; url: string; embed: boolean; note: string }[];
   sources: { name: string; url: string }[];
 }
+
+export interface CenterStatus {
+  state: "closed" | "standby" | "open";
+  text: string;
+  detail?: string | null;
+  phone?: string | null;
+  updated_at: string;
+}

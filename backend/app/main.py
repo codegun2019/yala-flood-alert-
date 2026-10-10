@@ -19,7 +19,7 @@ from sqlalchemy import delete, desc, func, insert, select, update
 from . import collector, config, push, risk, status
 from .db import (
     alerts, announcements, data_source_health, get_engine, init_db, notification_logs, notification_preferences,
-    push_subscriptions, rainfall_readings, station_thresholds, stations, upsert, utcnow, water_readings,
+    push_subscriptions, rainfall_readings, settings, station_thresholds, stations, upsert, utcnow, water_readings,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -220,6 +220,19 @@ def announcements_list():
     now = utcnow()
     with get_engine().connect() as conn:
         return {"announcements": _active_announcements(conn, now)}
+
+
+CENTER_KEY = "center_status"
+
+
+@app.get("/api/center-status")
+def center_status():
+    """Status of the (official) help centre, set by admins only. None = nothing declared, show nothing."""
+    with get_engine().connect() as conn:
+        row = conn.execute(select(settings).where(settings.c.key == CENTER_KEY)).first()
+    if not row:
+        return {"status": None}
+    return {"status": {**json.loads(row.value), "updated_at": row.updated_at.isoformat()}}
 
 
 @app.get("/api/cctv")
@@ -468,6 +481,28 @@ def admin_create_announcement(body: AnnouncementIn):
 def admin_deactivate_announcement(ann_id: int):
     with get_engine().begin() as conn:
         conn.execute(update(announcements).where(announcements.c.id == ann_id).values(active=False))
+    return {"ok": True}
+
+
+class CenterStatusIn(BaseModel):
+    state: Literal["closed", "standby", "open"]
+    text: str = Field(min_length=1, max_length=200)
+    detail: str | None = Field(default=None, max_length=1000)
+    phone: str | None = Field(default=None, max_length=30, pattern=r"^[0-9+\-\s()]*$")
+
+
+@app.put("/api/admin/center-status", dependencies=[Depends(require_admin)])
+def admin_set_center_status(body: CenterStatusIn):
+    with get_engine().begin() as conn:
+        upsert(conn, settings, {"key": CENTER_KEY, "value": json.dumps(body.model_dump(), ensure_ascii=False),
+                                "updated_at": utcnow()}, ["key"])
+    return {"ok": True}
+
+
+@app.delete("/api/admin/center-status", dependencies=[Depends(require_admin)])
+def admin_clear_center_status():
+    with get_engine().begin() as conn:
+        conn.execute(delete(settings).where(settings.c.key == CENTER_KEY))
     return {"ok": True}
 
 

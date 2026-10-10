@@ -112,6 +112,7 @@ export default function Admin() {
         </div>
       </section>
 
+      <CenterForm token={token} onDone={(m) => setMsg(m)} />
       <AnnouncementForm token={token} onDone={(m) => { setMsg(m); load(token); }} />
       <section className="rounded-2xl bg-white p-4 shadow-sm">
         <h2 className="font-bold">ประกาศที่กำลังแสดง</h2>
@@ -229,5 +230,49 @@ function ThresholdModal({ s, token, onClose, onDone }: { s: AdminStation; token:
         </div>
       </div>
     </div>
+  );
+}
+
+function CenterForm({ token, onDone }: { token: string; onDone: (m: string) => void }) {
+  const [state, setState] = useState<"closed" | "standby" | "open">("closed");
+  const [text, setText] = useState("ยังไม่เปิดศูนย์ช่วยเหลืออย่างเป็นทางการในจังหวัดยะลา");
+  const [detail, setDetail] = useState("");
+  const [phone, setPhone] = useState("1784");
+  const [busy, setBusy] = useState(false);
+  const [current, setCurrent] = useState<string | null>(null);
+
+  useEffect(() => {
+    api<{ status: { state: string; text: string } | null }>("/api/center-status").then((r) => setCurrent(r.status ? `${r.status.state}: ${r.status.text}` : null)).catch(() => {});
+  }, [busy]);
+
+  const save = async () => {
+    if (!text.trim()) return;
+    setBusy(true);
+    try {
+      await api("/api/admin/center-status", { method: "PUT", admin: token, body: JSON.stringify({ state, text, detail: detail || null, phone: phone || null }) });
+      onDone("บันทึกสถานะศูนย์ช่วยเหลือแล้ว");
+    } catch (e: any) { onDone("ไม่สำเร็จ: " + e.message); } finally { setBusy(false); }
+  };
+  const clear = async () => {
+    setBusy(true);
+    try { await api("/api/admin/center-status", { method: "DELETE", admin: token }); onDone("ซ่อนสถานะศูนย์ช่วยเหลือแล้ว"); }
+    catch (e: any) { onDone("ไม่สำเร็จ: " + e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <section className="rounded-2xl bg-white p-4 shadow-sm">
+      <h2 className="font-bold">สถานะศูนย์ช่วยเหลือ (แสดงบนหน้าแรก)</h2>
+      <p className="text-xs text-slate-500">ถ้าไม่ตั้งค่า หน้าแรกจะไม่แสดงอะไรเลย — ตั้งเฉพาะข้อมูลที่หน่วยงานยืนยันแล้ว {current && <b className="text-slate-700">· ตอนนี้: {current}</b>}</p>
+      <select value={state} onChange={(e) => setState(e.target.value as any)} className="mt-2 w-full rounded-xl border border-slate-300 p-2.5">
+        <option value="closed">ยังไม่เปิดศูนย์</option><option value="standby">เตรียมพร้อมเปิดศูนย์</option><option value="open">เปิดศูนย์แล้ว</option>
+      </select>
+      <input value={text} onChange={(e) => setText(e.target.value)} maxLength={200} placeholder="ข้อความหลัก" className="mt-2 w-full rounded-xl border border-slate-300 p-2.5" />
+      <textarea value={detail} onChange={(e) => setDetail(e.target.value)} maxLength={1000} rows={2} placeholder="รายละเอียด (ไม่บังคับ) เช่น สถานที่ เวลา" className="mt-2 w-full rounded-xl border border-slate-300 p-2.5" />
+      <input value={phone} onChange={(e) => setPhone(e.target.value)} maxLength={30} placeholder="เบอร์โทร (ไม่บังคับ)" className="mt-2 w-full rounded-xl border border-slate-300 p-2.5" />
+      <div className="mt-3 flex gap-2">
+        <button disabled={busy} onClick={save} className="rounded-xl bg-sky-700 px-5 py-2.5 font-semibold text-white disabled:opacity-50">บันทึก</button>
+        <button disabled={busy} onClick={clear} className="rounded-xl bg-slate-200 px-5 py-2.5 font-semibold disabled:opacity-50">ซ่อนป้าย</button>
+      </div>
+    </section>
   );
 }
